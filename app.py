@@ -62,7 +62,7 @@ if 'df_master' not in st.session_state:
 
 if 'riwayat_forecast' not in st.session_state:
     st.session_state['riwayat_forecast'] = pd.DataFrame(columns=[
-        'Waktu Peramalan', 'Nama Produk', 'Metode', 'Bulan Target', 'Tahun Target', 'Rekomendasi Restock (Unit)'
+        'Waktu Peramalan', 'Nama Produk', 'Metode', 'Rekomendasi Kuantitas', 'Estimasi Waktu'
     ])
 
 if 'last_uploaded' not in st.session_state:
@@ -127,7 +127,6 @@ else:
         try:
             if uploaded_file.name.endswith('.xlsx'):
                 df_temp = pd.read_excel(uploaded_file, header=None)
-                # Mencari header yang mengandung kata 'nama'
                 header_idx = 0
                 for i, row in df_temp.iterrows():
                     if any('nama' in str(item).lower() for item in row):
@@ -139,7 +138,6 @@ else:
                 
             df_temp.columns = [str(c).strip() for c in df_temp.columns]
             
-            # Mapping nama kolom agar fleksibel
             col_nama = [c for c in df_temp.columns if 'nama' in c.lower()][0]
             col_total = [c for c in df_temp.columns if 'total' in c.lower() or 'jumlah' in c.lower()][0]
             col_pendapatan = [c for c in df_temp.columns if 'pendapatan' in c.lower()][0]
@@ -150,7 +148,6 @@ else:
                 col_pendapatan: 'Pendapatan', col_keuntungan: 'Keuntungan'
             })
             
-            # Pembersih Data Cerdas
             def bersihkan_angka(x):
                 if pd.isna(x): return 0
                 if isinstance(x, (int, float)): return int(x)
@@ -206,7 +203,7 @@ else:
         st.line_chart(df_clean[['Total']].copy())
 
     # ==========================================================================
-    # TAB FORECASTING (OWNER) - LOGIKA SAMA PERSIS DENGAN JUPYTER
+    # TAB FORECASTING (OWNER)
     # ==========================================================================
     if role_user == "Owner":
         with tab_forecast:
@@ -223,28 +220,32 @@ else:
                         daftar_produk = df_clean['Nama Barang'].unique().tolist()
                         produk_pilihan = st.selectbox("Pilih Produk yang Ingin Diprediksi:", daftar_produk)
                         
+                        st.markdown("<hr>", unsafe_allow_html=True)
+                        
+                        # --- FITUR OPSI SISA STOK (CHECKBOX) ---
+                        hitung_estimasi_waktu = st.checkbox("Saya ingin memprediksi kapan waktu restock (membutuhkan data sisa stok saat ini)", value=False)
+                        if hitung_estimasi_waktu:
+                            stok_saat_ini = st.number_input("Sisa Stok di Gudang Saat Ini (Unit):", min_value=0, value=0, step=1)
+                        else:
+                            stok_saat_ini = 0
+                        # --------------------------------------
+                        
                         st.markdown("<br>", unsafe_allow_html=True)
                         submit_owner = st.form_submit_button("Lakukan Peramalan")
                         
             with col_hasil:
                 st.markdown("### Hasil Analisis & Keputusan")
                 if submit_owner:
-                    # 1. FILTER DATA KHUSUS PRODUK YANG DIPILIH (Sesuai Jupyter)
                     item_df = df_clean[df_clean['Nama Barang'] == produk_pilihan].copy()
                     
                     if len(item_df) >= 3:
                         X_item = item_df[['Keuntungan', 'Pendapatan']]
                         y_item = item_df['Total']
                         
-                        # Train-Test Split khusus produk ini
                         X_train, X_test, y_train, y_test = train_test_split(X_item, y_item, test_size=0.2, random_state=42)
-                        
-                        # Variabel Input Prediksi berbasis NILAI RATA-RATA historis produk (Sesuai Jupyter)
                         input_pred = pd.DataFrame([[item_df['Keuntungan'].mean(), item_df['Pendapatan'].mean()]], columns=['Keuntungan', 'Pendapatan'])
                         
                         waktu_sekarang = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        bulan_target = (datetime.date.today() + datetime.timedelta(days=30)).strftime("%B")
-                        tahun_target = (datetime.date.today() + datetime.timedelta(days=30)).strftime("%Y")
 
                         def latih_dan_tampilkan(nama_model, model_obj):
                             model_obj.fit(X_train, y_train)
@@ -252,15 +253,35 @@ else:
                             mape_val = mean_absolute_percentage_error(y_test, y_pred_test)
                             
                             next_pred = model_obj.predict(input_pred)[0]
-                            pred_riil = max(0, round(next_pred)) # Dibulatkan sesuai standar riil
+                            pred_riil = max(0, round(next_pred))
                             
-                            st.info(f"💡 Rekomendasi Kuantitas Restock ({nama_model}): **{pred_riil} unit**")
+                            # --- LOGIKA PENENTUAN WAKTU RESTOCK DINAMIS ---
+                            if hitung_estimasi_waktu:
+                                if pred_riil > 0:
+                                    sisa_bulan = stok_saat_ini / pred_riil
+                                    if sisa_bulan < 1:
+                                        waktu_restock = "Segera (Bulan Ini)"
+                                    elif 1 <= sisa_bulan < 2:
+                                        waktu_restock = "Bulan Depan"
+                                    else:
+                                        waktu_restock = f"{int(sisa_bulan)} Bulan Lagi"
+                                else:
+                                    waktu_restock = "Belum Perlu (Prediksi Penjualan 0)"
+                            else:
+                                waktu_restock = "Bulan Depan (Berdasarkan 1 Periode Prediksi)"
+                            # ----------------------------------------------
+                            
+                            st.info(f"💡 Kuantitas Restock ({nama_model}): **{pred_riil} unit**")
+                            st.warning(f"⏳ Perkiraan Harus Restock: **{waktu_restock}**")
                             st.success(f"📈 Akurasi Galat (MAPE): **{mape_val*100:.2f}%**")
+                            st.markdown("<br>", unsafe_allow_html=True)
                             
                             riwayat_baru = pd.DataFrame([{
-                                'Waktu Peramalan': waktu_sekarang, 'Nama Produk': produk_pilihan, 
-                                'Metode': nama_model, 'Bulan Target': bulan_target, 
-                                'Tahun Target': tahun_target, 'Rekomendasi Restock (Unit)': pred_riil
+                                'Waktu Peramalan': waktu_sekarang, 
+                                'Nama Produk': produk_pilihan, 
+                                'Metode': nama_model, 
+                                'Rekomendasi Kuantitas': f"{pred_riil} unit",
+                                'Estimasi Waktu': waktu_restock
                             }])
                             st.session_state['riwayat_forecast'] = pd.concat([st.session_state['riwayat_forecast'], riwayat_baru], ignore_index=True)
 
@@ -271,9 +292,9 @@ else:
                             latih_dan_tampilkan("Regresi Linier", LinearRegression())
                             
                     else:
-                        st.error(f"⚠️ Riwayat data historis '{produk_pilihan}' kurang dari 3 baris ({len(item_df)} baris). Tidak dapat melakukan pemodelan Regresi/RF untuk produk ini.")
+                        st.error(f"⚠️ Riwayat data historis '{produk_pilihan}' kurang dari 3 baris ({len(item_df)} baris). Tidak dapat melakukan peramalan.")
                 else:
-                    st.write("Silakan pilih Metode dan Produk dari form di sebelah kiri, lalu klik 'Lakukan Peramalan'.")
+                    st.write("Silakan isi form di sebelah kiri, lalu klik 'Lakukan Peramalan'.")
 
             st.markdown("<br><hr><br>", unsafe_allow_html=True)
             st.header("📋 Tabel Riwayat Hasil Peramalan Otomatis (Log Sistem)")
@@ -313,7 +334,6 @@ else:
                 if not nama_barang_final or not nama_barang_final.strip():
                     st.error("⚠️ Nama produk tidak boleh kosong!")
                 else:
-                    # Simpan data langsung ke database dengan Total default 0 (karena prediksi hanya dilakukan di tab forecasting owner)
                     master_baru = pd.DataFrame([{
                         'Nama Barang': nama_barang_final.strip(), 'Keuntungan': keuntungan_baru, 
                         'Pendapatan': pendapatan_baru, 'Total': 0
