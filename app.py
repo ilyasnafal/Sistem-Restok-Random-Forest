@@ -222,13 +222,11 @@ else:
                         
                         st.markdown("<hr>", unsafe_allow_html=True)
                         
-                        # --- FITUR OPSI SISA STOK (CHECKBOX) ---
                         hitung_estimasi_waktu = st.checkbox("Saya ingin memprediksi kapan waktu restock (membutuhkan data sisa stok saat ini)", value=False)
                         if hitung_estimasi_waktu:
                             stok_saat_ini = st.number_input("Sisa Stok di Gudang Saat Ini (Unit):", min_value=0, value=0, step=1)
                         else:
                             stok_saat_ini = 0
-                        # --------------------------------------
                         
                         st.markdown("<br>", unsafe_allow_html=True)
                         submit_owner = st.form_submit_button("Lakukan Peramalan")
@@ -255,7 +253,6 @@ else:
                             next_pred = model_obj.predict(input_pred)[0]
                             pred_riil = max(0, round(next_pred))
                             
-                            # --- LOGIKA PENENTUAN WAKTU RESTOCK DINAMIS ---
                             if hitung_estimasi_waktu:
                                 if pred_riil > 0:
                                     sisa_bulan = stok_saat_ini / pred_riil
@@ -269,7 +266,6 @@ else:
                                     waktu_restock = "Belum Perlu (Prediksi Penjualan 0)"
                             else:
                                 waktu_restock = "Bulan Depan (Berdasarkan 1 Periode Prediksi)"
-                            # ----------------------------------------------
                             
                             st.info(f"💡 Kuantitas Restock ({nama_model}): **{pred_riil} unit**")
                             st.warning(f"⏳ Perkiraan Harus Restock: **{waktu_restock}**")
@@ -303,9 +299,75 @@ else:
             else:
                 st.dataframe(st.session_state['riwayat_forecast'], use_container_width=True)
 
+        # ==========================================================================
+        # TAB KEUANGAN (FITUR BARU)
+        # ==========================================================================
         with tab_keu:
-            st.header("Laporan Keuangan")
-            st.write("Menampilkan rekapitulasi finansial dan margin toko secara keseluruhan.")
+            st.header("Laporan Keuangan & Profitabilitas")
+            st.write("Menampilkan rekapitulasi finansial, perbandingan modal vs keuntungan, dan margin profit toko secara keseluruhan berdasarkan Master Stok.")
+            
+            if df_clean.empty:
+                st.warning("Data Master Stok masih kosong.")
+            else:
+                # 1. Agregasi Data Keuangan per Produk
+                df_keuangan = df_clean.groupby('Nama Barang').agg({
+                    'Pendapatan': 'sum',
+                    'Keuntungan': 'sum'
+                }).reset_index()
+                
+                # 2. Menghitung Modal (HPP) dan Margin Profit
+                df_keuangan['Modal (HPP)'] = df_keuangan['Pendapatan'] - df_keuangan['Keuntungan']
+                df_keuangan['Margin Profit (%)'] = (df_keuangan['Keuntungan'] / df_keuangan['Pendapatan']) * 100
+                df_keuangan['Margin Profit (%)'] = df_keuangan['Margin Profit (%)'].fillna(0) # Mencegah error pembagian dengan 0
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # --- ELEMEN 1: METRIK RINGKASAN ---
+                st.subheader("1. Ringkasan Finansial Keseluruhan")
+                total_pendapatan_all = df_keuangan['Pendapatan'].sum()
+                total_keuntungan_all = df_keuangan['Keuntungan'].sum()
+                total_modal_all = df_keuangan['Modal (HPP)'].sum()
+                avg_margin_all = (total_keuntungan_all / total_pendapatan_all * 100) if total_pendapatan_all > 0 else 0
+                
+                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                with col_m1:
+                    st.info(f"**Total Pendapatan:**\n### Rp {total_pendapatan_all:,.0f}")
+                with col_m2:
+                    st.warning(f"**Estimasi Total Modal:**\n### Rp {total_modal_all:,.0f}")
+                with col_m3:
+                    st.success(f"**Total Keuntungan:**\n### Rp {total_keuntungan_all:,.0f}")
+                with col_m4:
+                    st.error(f"**Rata-rata Margin:**\n### {avg_margin_all:.2f}%")
+                
+                st.markdown("<hr>", unsafe_allow_html=True)
+                
+                # --- ELEMEN 2: TABEL RINCIAN ---
+                st.subheader("2. Tabel Rincian Finansial & Margin per Produk")
+                df_tampil = df_keuangan.copy()
+                df_tampil['Pendapatan'] = df_tampil['Pendapatan'].apply(lambda x: f"Rp {x:,.0f}")
+                df_tampil['Modal (HPP)'] = df_tampil['Modal (HPP)'].apply(lambda x: f"Rp {x:,.0f}")
+                df_tampil['Keuntungan'] = df_tampil['Keuntungan'].apply(lambda x: f"Rp {x:,.0f}")
+                df_tampil['Margin Profit (%)'] = df_tampil['Margin Profit (%)'].apply(lambda x: f"{x:.2f}%")
+                
+                st.dataframe(df_tampil, use_container_width=True)
+                
+                st.markdown("<hr>", unsafe_allow_html=True)
+                
+                # --- ELEMEN 3 & 4: GRAFIK VISUALISASI ---
+                col_g1, col_g2 = st.columns(2)
+                
+                with col_g1:
+                    st.subheader("3. Pendapatan vs Keuntungan")
+                    st.write("Melihat perbandingan volume transaksi produk.")
+                    chart_data = df_keuangan.set_index('Nama Barang')[['Pendapatan', 'Keuntungan']]
+                    st.bar_chart(chart_data)
+                
+                with col_g2:
+                    st.subheader("4. Tingkat Profitabilitas (Margin %)")
+                    st.write("Semakin tinggi, semakin menguntungkan modalnya.")
+                    margin_data = df_keuangan.sort_values(by='Margin Profit (%)', ascending=False)
+                    chart_margin = margin_data.set_index('Nama Barang')[['Margin Profit (%)']]
+                    st.bar_chart(chart_margin)
 
     # ==========================================================================
     # TAB INPUT DATA BARU (ADMIN)
