@@ -7,6 +7,7 @@ from sklearn.metrics import mean_absolute_percentage_error
 from sklearn.model_selection import train_test_split
 import datetime
 import re
+import os
 
 # Mengatur tampilan halaman menjadi mode lebar
 st.set_page_config(page_title="Sistem Restock ML", layout="wide")
@@ -46,27 +47,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. INISIALISASI SESSION STATE UNTUK DATA DINAMIS & LOGIN
+# 1. INISIALISASI SESSION STATE & SISTEM AUTO-SAVE DATABASE
 # ==============================================================================
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['role'] = None
 
 if 'df_master' not in st.session_state:
-    st.session_state['df_master'] = pd.DataFrame({
-        'Nama Barang': ['Gelas Emas', 'Gelas Emas', 'Gelas Emas', 'Kindy Bag', 'Kindy Bag', 'Kindy Bag'],
-        'Keuntungan': [3000, 3500, 3200, 11000, 12000, 11500],
-        'Pendapatan': [6000, 7000, 6500, 50000, 55000, 52000],
-        'Total':      [2, 3, 2, 1, 2, 1]
-    })
+    # Mengecek apakah ada database backup lokal yang tersimpan di server
+    if os.path.exists('master_stok_terkini.csv'):
+        st.session_state['df_master'] = pd.read_csv('master_stok_terkini.csv')
+        st.session_state['last_uploaded'] = 'Database Tersimpan (master_stok_terkini.csv)'
+    else:
+        st.session_state['df_master'] = pd.DataFrame({
+            'Nama Barang': ['Gelas Emas', 'Gelas Emas', 'Gelas Emas', 'Kindy Bag', 'Kindy Bag', 'Kindy Bag'],
+            'Keuntungan': [3000, 3500, 3200, 11000, 12000, 11500],
+            'Pendapatan': [6000, 7000, 6500, 50000, 55000, 52000],
+            'Total':      [2, 3, 2, 1, 2, 1]
+        })
+        st.session_state['last_uploaded'] = None
 
 if 'riwayat_forecast' not in st.session_state:
     st.session_state['riwayat_forecast'] = pd.DataFrame(columns=[
         'Waktu Peramalan', 'Nama Produk', 'Metode', 'Rekomendasi Kuantitas', 'Estimasi Waktu'
     ])
-
-if 'last_uploaded' not in st.session_state:
-    st.session_state['last_uploaded'] = None
 
 # ==============================================================================
 # 2. HALAMAN LOGIN
@@ -111,7 +115,7 @@ else:
     role_user = st.session_state['role']
 
     # --------------------------------------------------------------------------
-    # SIDEBAR
+    # SIDEBAR & PENGATURAN DATA
     # --------------------------------------------------------------------------
     st.sidebar.markdown(f"**Status:** Login sebagai {role_user}")
     if st.sidebar.button("Keluar (Logout)"):
@@ -121,6 +125,13 @@ else:
         
     st.sidebar.markdown("---")
     st.sidebar.title("📂 Pengaturan Data")
+    
+    # INDIKATOR FILE AKTIF (Agar pengguna tahu file tidak perlu di-upload ulang)
+    if st.session_state['last_uploaded']:
+        st.sidebar.info(f"💾 **Memori Aktif:**\n{st.session_state['last_uploaded']}")
+    else:
+        st.sidebar.info("💾 **Memori Aktif:**\nData Bawaan (Dummy)")
+        
     uploaded_file = st.sidebar.file_uploader("Timpa Master Stok dengan File (Excel/CSV)", type=["xlsx", "csv"])
     
     if uploaded_file is not None and uploaded_file.name != st.session_state['last_uploaded']:
@@ -162,9 +173,14 @@ else:
                 
             df_temp = df_temp.dropna(subset=['Total', 'Nama Barang'])
             
+            # Update ke Session State
             st.session_state['df_master'] = df_temp
             st.session_state['last_uploaded'] = uploaded_file.name
-            st.sidebar.success("✅ File berhasil dibersihkan dan dimuat ke Master Stok!")
+            
+            # --- AUTO SAVE KE FILE LOKAL ---
+            df_temp.to_csv('master_stok_terkini.csv', index=False)
+            
+            st.sidebar.success("✅ File berhasil diproses dan disimpan ke memori permanen!")
             
         except Exception as e:
             st.sidebar.error(f"Gagal memproses file: {e}. Pastikan format sesuai.")
@@ -300,7 +316,7 @@ else:
                 st.dataframe(st.session_state['riwayat_forecast'], use_container_width=True)
 
         # ==========================================================================
-        # TAB KEUANGAN (FITUR BARU)
+        # TAB KEUANGAN
         # ==========================================================================
         with tab_keu:
             st.header("Laporan Keuangan & Profitabilitas")
@@ -309,20 +325,17 @@ else:
             if df_clean.empty:
                 st.warning("Data Master Stok masih kosong.")
             else:
-                # 1. Agregasi Data Keuangan per Produk
                 df_keuangan = df_clean.groupby('Nama Barang').agg({
                     'Pendapatan': 'sum',
                     'Keuntungan': 'sum'
                 }).reset_index()
                 
-                # 2. Menghitung Modal (HPP) dan Margin Profit
                 df_keuangan['Modal (HPP)'] = df_keuangan['Pendapatan'] - df_keuangan['Keuntungan']
                 df_keuangan['Margin Profit (%)'] = (df_keuangan['Keuntungan'] / df_keuangan['Pendapatan']) * 100
-                df_keuangan['Margin Profit (%)'] = df_keuangan['Margin Profit (%)'].fillna(0) # Mencegah error pembagian dengan 0
+                df_keuangan['Margin Profit (%)'] = df_keuangan['Margin Profit (%)'].fillna(0)
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # --- ELEMEN 1: METRIK RINGKASAN ---
                 st.subheader("1. Ringkasan Finansial Keseluruhan")
                 total_pendapatan_all = df_keuangan['Pendapatan'].sum()
                 total_keuntungan_all = df_keuangan['Keuntungan'].sum()
@@ -341,7 +354,6 @@ else:
                 
                 st.markdown("<hr>", unsafe_allow_html=True)
                 
-                # --- ELEMEN 2: TABEL RINCIAN ---
                 st.subheader("2. Tabel Rincian Finansial & Margin per Produk")
                 df_tampil = df_keuangan.copy()
                 df_tampil['Pendapatan'] = df_tampil['Pendapatan'].apply(lambda x: f"Rp {x:,.0f}")
@@ -353,7 +365,6 @@ else:
                 
                 st.markdown("<hr>", unsafe_allow_html=True)
                 
-                # --- ELEMEN 3 & 4: GRAFIK VISUALISASI ---
                 col_g1, col_g2 = st.columns(2)
                 
                 with col_g1:
@@ -401,6 +412,10 @@ else:
                         'Pendapatan': pendapatan_baru, 'Total': 0
                     }])
                     st.session_state['df_master'] = pd.concat([st.session_state['df_master'], master_baru], ignore_index=True)
+                    
+                    # --- AUTO SAVE KE FILE LOKAL ---
+                    st.session_state['df_master'].to_csv('master_stok_terkini.csv', index=False)
+                    
                     st.success(f"✅ Data produk '{nama_barang_final.strip()}' berhasil ditambahkan ke dalam Master Stok.")
 
     # ==========================================================================
