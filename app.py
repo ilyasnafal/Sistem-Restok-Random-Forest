@@ -138,8 +138,8 @@ else:
                 df_temp = pd.read_excel(uploaded_file, header=None)
                 header_idx = 0
                 for i, row in df_temp.iterrows():
-                    # Memperluas toleransi pencarian header
-                    if any(isinstance(item, str) and ('nama' in item.lower() or 'produk' in item.lower() or 'item' in item.lower()) for item in row):
+                    # PENAMBAHAN KATA KUNCI 'name' UNTUK MENDETEKSI HEADER
+                    if any(isinstance(item, str) and ('nama' in item.lower() or 'produk' in item.lower() or 'item' in item.lower() or 'name' in item.lower()) for item in row):
                         header_idx = i
                         break
                 df_temp = pd.read_excel(uploaded_file, header=header_idx)
@@ -148,16 +148,15 @@ else:
                 
             df_temp.columns = [str(c).strip() for c in df_temp.columns]
             
-            # --- PENDETEKSI KOLOM ANTI-CRASH (SAFE MAPPING) ---
-            # Menggunakan fungsi next() dengan nilai default None agar tidak memicu IndexError [0]
-            col_nama = next((c for c in df_temp.columns if 'nama' in c.lower() or 'produk' in c.lower() or 'item' in c.lower()), None)
+            # --- PENDETEKSI KOLOM ANTI-CRASH DIPERBARUI DENGAN 'name' ---
+            col_nama = next((c for c in df_temp.columns if 'nama' in c.lower() or 'produk' in c.lower() or 'item' in c.lower() or 'name' in c.lower()), None)
             col_total = next((c for c in df_temp.columns if 'total' in c.lower() or 'jumlah' in c.lower() or 'qty' in c.lower()), None)
             col_pendapatan = next((c for c in df_temp.columns if 'pendapatan' in c.lower() or 'revenue' in c.lower() or 'omset' in c.lower()), None)
             col_keuntungan = next((c for c in df_temp.columns if 'keuntungan' in c.lower() or 'profit' in c.lower() or 'laba' in c.lower()), None)
 
             # Jika ada salah satu pilar kolom utama yang tidak ditemukan, tolak tanpa crash
             if None in [col_nama, col_total, col_pendapatan, col_keuntungan]:
-                st.sidebar.error("⚠️ Format kolom tidak dikenali! File Excel Anda setidaknya harus memiliki variasi kolom untuk: Nama/Produk, Total/Jumlah/Qty, Pendapatan/Omset, dan Keuntungan/Laba.")
+                st.sidebar.error("⚠️ Format kolom tidak dikenali! File Excel Anda setidaknya harus memiliki variasi kolom untuk: Nama/Produk/Name, Total/Jumlah/Qty, Pendapatan/Omset, dan Keuntungan/Laba.")
             else:
                 df_temp = df_temp.rename(columns={
                     col_nama: 'Nama Barang', col_total: 'Total',
