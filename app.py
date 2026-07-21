@@ -138,7 +138,6 @@ else:
                 df_temp = pd.read_excel(uploaded_file, header=None)
                 header_idx = 0
                 for i, row in df_temp.iterrows():
-                    # PENAMBAHAN KATA KUNCI 'name' UNTUK MENDETEKSI HEADER
                     if any(isinstance(item, str) and ('nama' in item.lower() or 'produk' in item.lower() or 'item' in item.lower() or 'name' in item.lower()) for item in row):
                         header_idx = i
                         break
@@ -148,13 +147,11 @@ else:
                 
             df_temp.columns = [str(c).strip() for c in df_temp.columns]
             
-            # --- PENDETEKSI KOLOM ANTI-CRASH DIPERBARUI DENGAN 'name' ---
             col_nama = next((c for c in df_temp.columns if 'nama' in c.lower() or 'produk' in c.lower() or 'item' in c.lower() or 'name' in c.lower()), None)
             col_total = next((c for c in df_temp.columns if 'total' in c.lower() or 'jumlah' in c.lower() or 'qty' in c.lower()), None)
             col_pendapatan = next((c for c in df_temp.columns if 'pendapatan' in c.lower() or 'revenue' in c.lower() or 'omset' in c.lower()), None)
             col_keuntungan = next((c for c in df_temp.columns if 'keuntungan' in c.lower() or 'profit' in c.lower() or 'laba' in c.lower()), None)
 
-            # Jika ada salah satu pilar kolom utama yang tidak ditemukan, tolak tanpa crash
             if None in [col_nama, col_total, col_pendapatan, col_keuntungan]:
                 st.sidebar.error("⚠️ Format kolom tidak dikenali! File Excel Anda setidaknya harus memiliki variasi kolom untuk: Nama/Produk/Name, Total/Jumlah/Qty, Pendapatan/Omset, dan Keuntungan/Laba.")
             else:
@@ -183,7 +180,6 @@ else:
                 df_temp.to_csv('master_stok_terkini.csv', index=False)
                 
                 st.sidebar.success("✅ File berhasil diproses dan disimpan ke memori permanen!")
-            # --------------------------------------------------
             
         except Exception as e:
             st.sidebar.error(f"Gagal memproses file: {e}. Terjadi kesalahan saat membaca dokumen.")
@@ -319,16 +315,31 @@ else:
                 st.dataframe(st.session_state['riwayat_forecast'], use_container_width=True)
 
         # ==========================================================================
-        # TAB KEUANGAN
+        # TAB KEUANGAN (DENGAN FITUR FILTER)
         # ==========================================================================
         with tab_keu:
             st.header("Laporan Keuangan & Profitabilitas")
-            st.write("Menampilkan rekapitulasi finansial, perbandingan modal vs keuntungan, dan margin profit toko secara keseluruhan berdasarkan Master Stok.")
+            st.write("Menampilkan rekapitulasi finansial, perbandingan modal vs keuntungan, dan margin profit toko.")
             
             if df_clean.empty:
                 st.warning("Data Master Stok masih kosong.")
             else:
-                df_keuangan = df_clean.groupby('Nama Barang').agg({
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # --- FITUR FILTER DATA KEUANGAN ---
+                daftar_filter = ["Keseluruhan (Semua Produk)"] + list(df_clean['Nama Barang'].unique())
+                pilihan_filter = st.selectbox("📊 Pilih Tampilan Data Analisis:", daftar_filter)
+                
+                # Terapkan filter pada dataframe
+                if pilihan_filter == "Keseluruhan (Semua Produk)":
+                    df_filtered = df_clean.copy()
+                    judul_ringkasan = "1. Ringkasan Finansial Keseluruhan"
+                else:
+                    df_filtered = df_clean[df_clean['Nama Barang'] == pilihan_filter].copy()
+                    judul_ringkasan = f"1. Ringkasan Finansial: {pilihan_filter}"
+
+                # Agregasi dari data yang sudah difilter
+                df_keuangan = df_filtered.groupby('Nama Barang').agg({
                     'Pendapatan': 'sum',
                     'Keuntungan': 'sum'
                 }).reset_index()
@@ -339,7 +350,7 @@ else:
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                st.subheader("1. Ringkasan Finansial Keseluruhan")
+                st.subheader(judul_ringkasan)
                 total_pendapatan_all = df_keuangan['Pendapatan'].sum()
                 total_keuntungan_all = df_keuangan['Keuntungan'].sum()
                 total_modal_all = df_keuangan['Modal (HPP)'].sum()
@@ -357,7 +368,7 @@ else:
                 
                 st.markdown("<hr>", unsafe_allow_html=True)
                 
-                st.subheader("2. Tabel Rincian Finansial & Margin per Produk")
+                st.subheader("2. Tabel Rincian Finansial & Margin")
                 df_tampil = df_keuangan.copy()
                 df_tampil['Pendapatan'] = df_tampil['Pendapatan'].apply(lambda x: f"Rp {x:,.0f}")
                 df_tampil['Modal (HPP)'] = df_tampil['Modal (HPP)'].apply(lambda x: f"Rp {x:,.0f}")
