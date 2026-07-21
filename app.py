@@ -54,7 +54,6 @@ if 'logged_in' not in st.session_state:
     st.session_state['role'] = None
 
 if 'df_master' not in st.session_state:
-    # Mengecek apakah ada database backup lokal yang tersimpan di server
     if os.path.exists('master_stok_terkini.csv'):
         st.session_state['df_master'] = pd.read_csv('master_stok_terkini.csv')
         st.session_state['last_uploaded'] = 'Database Tersimpan (master_stok_terkini.csv)'
@@ -126,17 +125,18 @@ else:
     st.sidebar.markdown("---")
     st.sidebar.title("📂 Pengaturan Data")
     
-    # INDIKATOR FILE AKTIF (Agar pengguna tahu file tidak perlu di-upload ulang)
     if st.session_state['last_uploaded']:
         st.sidebar.info(f"💾 **Memori Aktif:**\n{st.session_state['last_uploaded']}")
     else:
         st.sidebar.info("💾 **Memori Aktif:**\nData Bawaan (Dummy)")
         
-    uploaded_file = st.sidebar.file_uploader("Timpa Master Stok dengan File (Excel/CSV)", type=["xlsx", "csv"])
+    # PENAMBAHAN FORMAT "xls"
+    uploaded_file = st.sidebar.file_uploader("Timpa Master Stok dengan File", type=["xlsx", "xls", "csv"])
     
     if uploaded_file is not None and uploaded_file.name != st.session_state['last_uploaded']:
         try:
-            if uploaded_file.name.endswith('.xlsx'):
+            # PENGECEKAN KONDISI DIPERBARUI UNTUK ".xls"
+            if uploaded_file.name.endswith(('.xlsx', '.xls')):
                 df_temp = pd.read_excel(uploaded_file, header=None)
                 header_idx = 0
                 for i, row in df_temp.iterrows():
@@ -173,11 +173,9 @@ else:
                 
             df_temp = df_temp.dropna(subset=['Total', 'Nama Barang'])
             
-            # Update ke Session State
             st.session_state['df_master'] = df_temp
             st.session_state['last_uploaded'] = uploaded_file.name
             
-            # --- AUTO SAVE KE FILE LOKAL ---
             df_temp.to_csv('master_stok_terkini.csv', index=False)
             
             st.sidebar.success("✅ File berhasil diproses dan disimpan ke memori permanen!")
@@ -413,7 +411,6 @@ else:
                     }])
                     st.session_state['df_master'] = pd.concat([st.session_state['df_master'], master_baru], ignore_index=True)
                     
-                    # --- AUTO SAVE KE FILE LOKAL ---
                     st.session_state['df_master'].to_csv('master_stok_terkini.csv', index=False)
                     
                     st.success(f"✅ Data produk '{nama_barang_final.strip()}' berhasil ditambahkan ke dalam Master Stok.")
