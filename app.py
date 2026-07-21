@@ -130,17 +130,16 @@ else:
     else:
         st.sidebar.info("💾 **Memori Aktif:**\nData Bawaan (Dummy)")
         
-    # PENAMBAHAN FORMAT "xls"
     uploaded_file = st.sidebar.file_uploader("Timpa Master Stok dengan File", type=["xlsx", "xls", "csv"])
     
     if uploaded_file is not None and uploaded_file.name != st.session_state['last_uploaded']:
         try:
-            # PENGECEKAN KONDISI DIPERBARUI UNTUK ".xls"
             if uploaded_file.name.endswith(('.xlsx', '.xls')):
                 df_temp = pd.read_excel(uploaded_file, header=None)
                 header_idx = 0
                 for i, row in df_temp.iterrows():
-                    if any('nama' in str(item).lower() for item in row):
+                    # Memperluas toleransi pencarian header
+                    if any(isinstance(item, str) and ('nama' in item.lower() or 'produk' in item.lower() or 'item' in item.lower()) for item in row):
                         header_idx = i
                         break
                 df_temp = pd.read_excel(uploaded_file, header=header_idx)
@@ -149,39 +148,46 @@ else:
                 
             df_temp.columns = [str(c).strip() for c in df_temp.columns]
             
-            col_nama = [c for c in df_temp.columns if 'nama' in c.lower()][0]
-            col_total = [c for c in df_temp.columns if 'total' in c.lower() or 'jumlah' in c.lower()][0]
-            col_pendapatan = [c for c in df_temp.columns if 'pendapatan' in c.lower()][0]
-            col_keuntungan = [c for c in df_temp.columns if 'keuntungan' in c.lower()][0]
+            # --- PENDETEKSI KOLOM ANTI-CRASH (SAFE MAPPING) ---
+            # Menggunakan fungsi next() dengan nilai default None agar tidak memicu IndexError [0]
+            col_nama = next((c for c in df_temp.columns if 'nama' in c.lower() or 'produk' in c.lower() or 'item' in c.lower()), None)
+            col_total = next((c for c in df_temp.columns if 'total' in c.lower() or 'jumlah' in c.lower() or 'qty' in c.lower()), None)
+            col_pendapatan = next((c for c in df_temp.columns if 'pendapatan' in c.lower() or 'revenue' in c.lower() or 'omset' in c.lower()), None)
+            col_keuntungan = next((c for c in df_temp.columns if 'keuntungan' in c.lower() or 'profit' in c.lower() or 'laba' in c.lower()), None)
 
-            df_temp = df_temp.rename(columns={
-                col_nama: 'Nama Barang', col_total: 'Total',
-                col_pendapatan: 'Pendapatan', col_keuntungan: 'Keuntungan'
-            })
-            
-            def bersihkan_angka(x):
-                if pd.isna(x): return 0
-                if isinstance(x, (int, float)): return int(x)
-                x = str(x).lower().replace('rp', '').strip()
-                if ',' in x: x = x.split(',')[0]
-                x = x.replace('.', '')
-                x = re.sub(r'[^0-9]', '', x)
-                return int(x) if x else 0
-
-            for col in ['Keuntungan', 'Pendapatan', 'Total']:
-                df_temp[col] = df_temp[col].apply(bersihkan_angka)
+            # Jika ada salah satu pilar kolom utama yang tidak ditemukan, tolak tanpa crash
+            if None in [col_nama, col_total, col_pendapatan, col_keuntungan]:
+                st.sidebar.error("⚠️ Format kolom tidak dikenali! File Excel Anda setidaknya harus memiliki variasi kolom untuk: Nama/Produk, Total/Jumlah/Qty, Pendapatan/Omset, dan Keuntungan/Laba.")
+            else:
+                df_temp = df_temp.rename(columns={
+                    col_nama: 'Nama Barang', col_total: 'Total',
+                    col_pendapatan: 'Pendapatan', col_keuntungan: 'Keuntungan'
+                })
                 
-            df_temp = df_temp.dropna(subset=['Total', 'Nama Barang'])
-            
-            st.session_state['df_master'] = df_temp
-            st.session_state['last_uploaded'] = uploaded_file.name
-            
-            df_temp.to_csv('master_stok_terkini.csv', index=False)
-            
-            st.sidebar.success("✅ File berhasil diproses dan disimpan ke memori permanen!")
+                def bersihkan_angka(x):
+                    if pd.isna(x): return 0
+                    if isinstance(x, (int, float)): return int(x)
+                    x = str(x).lower().replace('rp', '').strip()
+                    if ',' in x: x = x.split(',')[0]
+                    x = x.replace('.', '')
+                    x = re.sub(r'[^0-9]', '', x)
+                    return int(x) if x else 0
+
+                for col in ['Keuntungan', 'Pendapatan', 'Total']:
+                    df_temp[col] = df_temp[col].apply(bersihkan_angka)
+                    
+                df_temp = df_temp.dropna(subset=['Total', 'Nama Barang'])
+                
+                st.session_state['df_master'] = df_temp
+                st.session_state['last_uploaded'] = uploaded_file.name
+                
+                df_temp.to_csv('master_stok_terkini.csv', index=False)
+                
+                st.sidebar.success("✅ File berhasil diproses dan disimpan ke memori permanen!")
+            # --------------------------------------------------
             
         except Exception as e:
-            st.sidebar.error(f"Gagal memproses file: {e}. Pastikan format sesuai.")
+            st.sidebar.error(f"Gagal memproses file: {e}. Terjadi kesalahan saat membaca dokumen.")
 
     df_clean = st.session_state['df_master']
 
