@@ -123,7 +123,7 @@ else:
         st.rerun()
         
     st.sidebar.markdown("---")
-    st.sidebar.title("📂 Form Inpu Data")
+    st.sidebar.title("📂 Form Input Data")
     
     if st.session_state['last_uploaded']:
         st.sidebar.info(f"💾 **Memori Aktif:**\n{st.session_state['last_uploaded']}")
