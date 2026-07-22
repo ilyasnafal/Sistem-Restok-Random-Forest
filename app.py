@@ -114,7 +114,7 @@ else:
     role_user = st.session_state['role']
 
     # --------------------------------------------------------------------------
-    # SIDEBAR & PENGATURAN DATA
+    # SIDEBAR & Form Input Data
     # --------------------------------------------------------------------------
     st.sidebar.markdown(f"**Status:** Login sebagai {role_user}")
     if st.sidebar.button("Keluar (Logout)"):
